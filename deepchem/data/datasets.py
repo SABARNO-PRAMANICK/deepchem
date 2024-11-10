@@ -1859,14 +1859,28 @@ class DiskDataset(Dataset):
             DiskDataset._save_metadata(metadata_df, out_dir, tasks)
             dataset = DiskDataset(out_dir)
         else:
-
+        # Sequential processing with selective loading
             def generator():
                 for shard_num, row in self.metadata_df.iterrows():
-                    logger.info("Transforming shard %d/%d" %
-                                (shard_num, n_shards))
-                    X, y, w, ids = self.get_shard(shard_num)
-                    newx, newy, neww, newids = transformer.transform_array(
-                        X, y, w, ids)
+                    logger.info("Transforming shard %d/%d" % (shard_num + 1, n_shards))
+                
+                    # NEW
+                    requires_features = transformer.requires_features()
+                    requires_labels = transformer.requires_labels()
+                    requires_weights = transformer.requires_weights()
+                
+                    # NEW
+                    X, y, w, ids = None, None, None, None
+                    if requires_features:
+                        X = self.get_shard(shard_num)[0]
+                    if requires_labels:
+                        y = self.get_shard_y(shard_num)
+                    if requires_weights:
+                        w = self.get_shard_w(shard_num)
+                    ids = self.get_shard(shard_num)[3] if requires_features else self.get_shard_ids(shard_num)
+
+                # Application
+                    newx, newy, neww, newids = transformer.transform_array(X, y, w, ids)
                     yield (newx, newy, neww, newids)
 
             dataset = DiskDataset.create_dataset(generator(),
